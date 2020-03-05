@@ -12,6 +12,7 @@ package_update: true
 package_upgrade: false
 packages:
   - vim
+  - lvm2
   - bsdutils 
   - screen
   - toilet
