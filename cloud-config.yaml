@@ -1,0 +1,156 @@
+#cloud-config
+users:
+  - name: candidate
+    groups: sudo
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh-authorized-keys:
+      - CANDIDATE_SSH_PUBLIC_KEY
+      - PROCTOR_SSH_PUBLIC_KEY
+
+package_update: true
+package_upgrade: false
+packages:
+  - vim
+  - bsdutils 
+  - screen
+  - toilet
+
+write_files:
+  - path: /tmp/fdisk.txt
+    permissions: '0644'
+    content: ',,8e,,'
+  - path: /etc/update-motd.d/99-lab-instructions
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      toilet --metal Candidate Lab
+      echo "
+      ##### Lab Instructions #####
+      We appreciate your time in going through this lab.  We hope that it takes you under an hour.  But, this lab will be available unil $(</timeout.txt).  Please complete the following:
+      
+      1. You're seeing a message repeatedly printing to the screen.  Stop it before you go nuts!
+      2. Host a web page using Apache on port 80.
+      3. Format /dev/loop6 as an ext3 filesystem and mount it one level above the Apache document root directory.
+      4. Clone this private git repo in place of the Apache document root directory: git@github.com:sellerlabs/candidate-lab-web-test.git
+      5. Have the default index page display the current year using PHP.
+      6. Ensure that Apache logs are working.
+      7. Create a user named proctor and authorize the following public key:
+        
+           PROCTOR_SSH_PUBLIC_KEY
+      
+      8. When you're finished, please issue the \"submit\" command, which will notify us and shut down the machine.
+
+      If you run into any problems that you just can't get figure out, use the \"ask\" command and we will try to reply quickly by email.  For example:
+      
+          ask how do I install apache?
+
+      Also note that you may start getting shutdown warnings well before the machine will actually shut down.  Please don't let this startle you.  It should not shut down before $(</timeout.txt).
+
+      See these instructions again at any time with the \"lab instructions\" command or by logging in again.
+      
+      ##########################################################
+      "
+  - path: /bin/checklabwork
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      SSHDIR=/home/proctor/.ssh
+      sudo grep -q kill /home/candidate/.bash_history /root/.bash_history || ERRORS=1
+      mount | grep www | grep -q ext4 || ERRORS=$ERRORS,3
+      test -d /var/www/html/.git || ERRORS=$ERRORS,4
+      curl localhost/index.php 2> /dev/null | grep -q $(date +%Y) || ERRORS=$ERRORS,5
+      sudo tail -1 /var/log/apache2/access.log | grep -q index.php || ERRORS=$ERRORS,6
+      sudo grep -q 9owUsBAsv $SSHDIR/authorized_keys > /dev/null 2>&1 && sudo ls -al $SSHDIR | grep -q "drwx------" || ERRORS=$ERRORS,7
+      test $ERRORS && echo had errors on tasks $ERRORS || echo passed
+  - path: /bin/submit
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      U=${HOSTNAME//*-/}
+      Q=$@
+      E=$(</email.txt)
+      I=$(/sbin/ifconfig eth0|grep "inet "|awk '{print $2}')
+      RESULTS=$(/bin/checklabwork)
+      curl -X POST --data-urlencode "payload={\"channel\": \"#SLACK_CHANNEL\", \"username\": \"$U\", \"text\": \"I'm finished with the lab.  I $RESULTS.  You can check my work: \`ssh root@$I\`\", \"icon_emoji\": \":droplet:\"}" SLACK_WEBHOOK > /dev/null 2>&1
+      echo Your lab work has been submitted and the proctor has been notified. Thank you so much for your completing this lab!
+      if [ "$RESULTS" == "passed" ]; then
+        echo "BTW, you passed!"
+      fi
+      sudo shutdown -h +120
+  - path: /bin/ask
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      U=${HOSTNAME//*-/}
+      Q=$@
+      E=$(</email.txt)
+      I=$(/sbin/ifconfig eth0|grep "inet addr"|cut -f 2 -d ":"|cut -d " " -f 1)
+      curl -X POST --data-urlencode "payload={\"channel\": \"#SLACK_CHANNEL\", \"username\": \"$U\", \"text\": \"$Q Email me at $E or you might try \`ssh root@$I wall YOUR REPLY...\`\", \"icon_emoji\": \":droplet:\"}" SLACK_WEBHOOK > /dev/null 2>&1
+      echo Your question, \"$Q\" has been submitted to the proctor.  The proctor will try to reply quickly either to the terminal here or to your email, $E. Thanks!
+  - path: /bin/labmount
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      sudo losetup /dev/loop6 /loop6.img
+      sudo losetup /dev/loop7 /loop7.img
+      sudo vgscan
+      sudo mount /dev/mapper/vg--apachelogs-lv--apachelogs /var/log/apache2
+      sudo mount /dev/loop6 /var/www
+      sudo systemctl restart apache2
+  - path: /tmp/curl_myself.sh
+    permissions: '0755'
+    content: |
+      while true
+      do
+        curl -s http://localhost/testing123 > /dev/null 2>&1
+        sleep 1
+      done
+  - path: /tmp/annoy_message.sh
+    permissions: '0755'
+    content: |
+      while true
+      do
+        test -s /email.txt && wall This is the song that never ever ends.  It will go on and on my friend.
+        sleep 30 
+      done
+  - path: /bin/requestaddress
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      read -p "Please enter your email address: " E && \
+      echo $E > /email.txt
+
+runcmd:
+  - find /etc/update-motd.d/ ! -name 99-lab-instructions -name [0-9]* -exec rm {} \;
+  - ln -s /etc/update-motd.d/99-lab-instructions /bin/lab
+  - echo "shopt -s histappend" >> /etc/bash.bashrc
+  - echo "PROMPT_COMMAND="history -a;$PROMPT_COMMAND"" >> /etc/bash.bashrc
+  - echo "test -s /email.txt || /bin/requestaddress" >> /etc/bash.bashrc
+  - EF=/email.txt && touch $EF && chmod 666 $EF
+  - mkdir /var/log/apache2
+  - dd if=/dev/zero of=/loop6.img bs=100 count=1M
+  - dd if=/dev/zero of=/loop7.img bs=100 count=1M
+  - losetup /dev/loop6 /loop6.img
+  - losetup /dev/loop7 /loop7.img
+  - sfdisk /dev/loop7 < /tmp/fdisk.txt
+  - vgscan
+  - vgchange -a ay
+  - pvcreate /dev/loop7 -y
+  - vgcreate vg-apachelogs /dev/loop7
+  - lvcreate -l1 -nlv-apachelogs vg-apachelogs
+  - mkfs.ext2 /dev/mapper/vg--apachelogs-lv--apachelogs
+  - mount /dev/mapper/vg--apachelogs-lv--apachelogs /var/log/apache2
+  - dd if=/dev/zero of=/var/log/apache2/big.log bs=100 count=40000
+  - chown -R candidate:candidate /home/candidate
+  - sh /tmp/curl_myself.sh &
+  - sh /tmp/annoy_message.sh &
+  - date -d "now + 3 days" > /timeout.txt
+
+final_message: "Let the lab begin!  This lab machine will turn itself off in three days.  This machine took $UPTIME seconds to bootstrap."
+    
+power_state:
+  timeout: 180
+  delay: "+4320"
+  message: Shutting down in one hour. Please save your work.
+  mode: poweroff
