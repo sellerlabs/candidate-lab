@@ -1,27 +1,9 @@
 ## Candidate Lab
 This cloud-config.yaml will build a machine that has some issues baked in.  Each candidate will have three days to complete the lab before the machine automatically shuts off.  Each candidate gets an individual machine.
 
-## Listing SSH Keys In Digital Ocean
-Useful for updating the *--ssh-keys* parameter when creating droplets.
-
-      doctl compute ssh-key list | cut -f 1 -d " "
-
-or, if you forget that doctl is a thing :)
-
-      curl -X GET -H "Content-Type: application/json" -H "Authorization: Bearer xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" "https://api.digitalocean.com/v2/account/keys"|jq '.[][] | {id: .id}' -cr|grep -v null|cut -d ":" -f 2|sed "s/\}/,/"
-
-Or, if you have `make`, just run `make list-keys`.
-
-## Adding all keys from a given authorized keys file into DO
-Useful for updating the *--ssh-keys* parameter when creating droplets.
-
-      cut -d " " -f 2-3 /home/someuser/.ssh/authorized_keys | while read key name; do if [[ "$name" == "$oldname" ]]; then oldname=${name}2; else oldname=$name; fi; echo Name: $oldname Key: $key; curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -d "{\"name\":\"$oldname\",\"public_key\":\"ssh-rsa $key $oldname\"}" "https://api.digitalocean.com/v2/account/keys"; done
+This tutorial is wordy because it assumes that you may not have `make` installed.
 
 ## Creating a Candidate Lab Machine
-If you're not using make, first modify `cloud-config.yaml` and replace `SLACK_WEBHOOK` with your own webhook address and `SLACK_CHANNEL` with the desired Slack channel.
-
-Also, you'll want to update the proctor SSH public key
-
 To create a lab machine for a candidate, we'll use Digital Ocean and assume that you've already run `doctl auth init` to connect.  Set some environment variables with your values.
 
     export MACHINE_NICKNAME=JaneDoe        # used as the suffix for the droplet name, as well as the hostname
@@ -30,7 +12,11 @@ To create a lab machine for a candidate, we'll use Digital Ocean and assume that
     export SSH_KEY_IDS=xxxxxxxxx,yyyyyyyy  # found with "doctl compute ssh-key list" or created at https://cloud.digitalocean.com/account/security
     export PROCTOR_SSH_PUBLIC_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQClizdLNVOd6VpPgn+Olry1vaM2J1nkVilfzYMG7negQqm9QR4bPuvEV2Rg64396HhIpQVj7mERaQq6twoDYFFCJm2qAJFqvztjethuBmDe4FyN3tForqxqwKX+liH9obgBamMMUR1P+S0DmX9gqQ51efpcfvB9vu9sa1Ijc63V3TYizi1Wiz1LhxFAUvxz8Qgx1lUSKafQWHtgopfy370de8NZm2e12qQc009gfEB8OwsHP6Rbanp/BnpWVZb6QchR9wa9E7l7Y9bnZkrTG32HGgdfwRDCuvAujVk7InHCGFuQNegypnbypyhkadXhJWlWOVB06Lcdz6Wm5wHCKIPD proctor"
 
-Then, if you don't have the `make` command:
+If you have `make` installed, simply run:
+
+    make
+
+If you *do not* have the `make` command:
 
     # modify the next line after creating an SSH key for the candidate to use
     export CANDIDATE_SSH_PUBLIC_KEY="ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQClizdLNVOd6VpPgn+Olry1vaM2J1nkVilfzYMG7negQqm9QR4bPuvEV2Rg64396HhIpQVj7mERaQq6twoDYFFCJm2qAJFqvztjethuBmDe4FyN3tForqxqwKX+liH9obgBamMMUR1P+S0DmX9gqQ51efpcfvB9vu9sa1Ijc63V3TYizi1Wiz1LhxFAUvxz8Qgx1lUSKafQWHtgopfy370de8NZm2e12qQc009gfEB8OwsHP6Rbanp/BnpWVZb6QchR9wa9E7l7Y9bnZkrTG32HGgdfwRDCuvAujVk7InHCGFuQNegypnbypyhkadXhJWlWOVB06Lcdz6Wm5wHCKIPD candidate"
@@ -40,10 +26,6 @@ Then, if you don't have the `make` command:
     export PROCTOR_SSH_PUBLIC_KEY_ESCAPED=$(echo $PROCTOR_SSH_PUBLIC_KEY | sed 's/\//\\\//g')
     sed "s/SLACK_CHANNEL/$SLACK_CHANNEL/g; s/SLACK_WEBHOOK/$SLACK_WEBHOOK_ESCAPED/g; s/PROCTOR_SSH_PUBLIC_KEY/$PROCTOR_SSH_PUBLIC_KEY_ESCAPED/g; s/CANDIDATE_SSH_PUBLIC_KEY/$CANDIDATE_SSH_PUBLIC_KEY_ESCAPED/g;" cloud-config.yaml > /tmp/cloud-config.yaml
     doctl compute droplet create candidate-lab-$MACHINE_NICKNAME --user-data-file /tmp/cloud-config.yaml --image ubuntu-18-04-x64 --region nyc3 --size s-1vcpu-1gb --tag-names tmp,lab --ssh-keys $SSH_KEY_IDS --wait
-
-If you have `make` installed, simply run:
-
-    make
 
 ### Granting More Time For the Lab
 Cancel the pending shutdown and create a new one with `+2000` being the number of minutes that you would like to wait before shutdown.
@@ -92,6 +74,7 @@ When the candidate completes the lab, we should be notified in slack.  We can lo
   1. ls /home/proctor oro grep proctor /etc/passwd
   1. cat /var/log/apt/*
   1. mount|grep ext
+
 ## Assignment and Questions
 See the cloud-config file.  The questions go into the message of the day file.
 
@@ -136,3 +119,19 @@ Each candidate will need the connection details to accomplish the lab.  You migh
       ZjTsa1q70qJ5K0oTjZhhmNLXG5+NfGEdslMhoz4AlRtt6b3ZOmwrEhuMK91pqY5tswbIfH
       kzgPUX95lpwZiwGDN541MfhJzrjOqjX/Bqfz5DjShJO4zGCeki
       -----END OPENSSH PRIVATE KEY-----
+
+## Listing SSH Keys In Digital Ocean
+Useful for updating the *--ssh-keys* parameter when creating droplets.
+
+      doctl compute ssh-key list | cut -f 1 -d " "
+
+or, if you forget that doctl is a thing :)
+
+      curl -X GET -H "Content-Type: application/json" -H "Authorization: Bearer xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" "https://api.digitalocean.com/v2/account/keys"|jq '.[][] | {id: .id}' -cr|grep -v null|cut -d ":" -f 2|sed "s/\}/,/"
+
+Or, if you have `make`, just run `make list-keys`.
+
+## Adding all keys from a given authorized keys file into DO
+Useful for updating the *--ssh-keys* parameter when creating droplets.
+
+      cut -d " " -f 2-3 /home/someuser/.ssh/authorized_keys | while read key name; do if [[ "$name" == "$oldname" ]]; then oldname=${name}2; else oldname=$name; fi; echo Name: $oldname Key: $key; curl -X POST -H "Content-Type: application/json" -H "Authorization: Bearer xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" -d "{\"name\":\"$oldname\",\"public_key\":\"ssh-rsa $key $oldname\"}" "https://api.digitalocean.com/v2/account/keys"; done
